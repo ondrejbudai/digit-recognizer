@@ -26,23 +26,24 @@ struct sigmoid_function {
     }
 };
 
-template<size_t neuron_count_in_previous_layer> class neuron {
-public:
+template<size_t neuron_count_in_previous_layer>
+struct neuron {
     neuron(){
         weights.fill(0);
     }
     std::array<double, neuron_count_in_previous_layer> weights;
-    double output;
-    double bias;
-    double gradient;
+    double output = 0.;
+    double bias = 0.;
+    double gradient = 0.;
 };
 
 template<size_t neuron_count_, size_t neuron_count_in_previous_layer>
-class layer {
-public:
+struct layer {
     static constexpr size_t neuron_count = neuron_count_;
     std::array<neuron<neuron_count_in_previous_layer>, neuron_count> neurons;
-    template<size_t neuron_number> auto& get_neuron(){
+
+    template<size_t neuron_number>
+    auto& get_neuron(){
         static_assert(neuron_number < neuron_count);
         return neurons[neuron_number];
     }
@@ -52,32 +53,38 @@ public:
     }
 };
 
-template<typename ActivationFunction, size_t... args> class net {
+template<typename ActivationFunction, size_t... args>
+class net {
 public:
-    template<size_t input_number> void set_input(double value){
+    template<size_t input_number>
+    void set_input(double value){
         auto& layer = get_layer<0>();
         auto& neuron = layer.template get_neuron<input_number>();
         neuron.output = value;
     }
 
-    template<size_t output_number> double get_output(){
+    template<size_t output_number>
+    double get_output(){
         auto& layer = get_layer<layer_count - 1>();
         auto& neuron = layer.template get_neuron<output_number>();
 
         return neuron.output;
     }
 
-    template<size_t output_number> void set_target_output(double value){
+    template<size_t output_number>
+    void set_target_output(double value){
         target_values[output_number] = value;
     }
 
-    template<size_t layer_number, size_t neuron_number, size_t input_number> void set_weight(double weight){
+    template<size_t layer_number, size_t neuron_number, size_t input_number>
+    void set_weight(double weight){
         auto& layer = get_layer<layer_number>();
         auto& neuron = layer.template get_neuron<neuron_number>();
         neuron.weights[input_number] = weight;
     };
 
-    template<size_t layer_number, size_t neuron_number> void set_bias(double bias){
+    template<size_t layer_number, size_t neuron_number>
+    void set_bias(double bias){
         auto& layer = get_layer<layer_number>();
         auto& neuron = layer.template get_neuron<neuron_number>();
         neuron.bias = bias;
@@ -101,15 +108,18 @@ private:
     static constexpr size_t output_count = size_tuple_element<layer_count - 1, size_tuple<args...>>::value;
     std::array<double, output_count> target_values;
 
-    template<size_t layer_number> static constexpr size_t get_neuron_count_at_layer(){
+    template<size_t layer_number>
+    static constexpr size_t get_neuron_count_at_layer(){
         return std::tuple_element<layer_number, decltype(layers)>::type::neuron_count;
     }
 
-    template<size_t layer_number> auto& get_layer(){
+    template<size_t layer_number>
+    auto& get_layer(){
         return std::get<layer_number>(layers);
     }
 
-    template<size_t layer_number = 1> void evaluate_layers(){
+    template<size_t layer_number = 1>
+    void evaluate_layers(){
         static_assert(layer_number > 0, "First layer cannot be evaluated!");
 
         for(size_t neuron = 0; neuron < get_neuron_count_at_layer<layer_number>(); ++neuron){
@@ -121,7 +131,8 @@ private:
         }
     }
 
-    template<size_t layer_number> void evaluate_neuron(size_t neuron_number){
+    template<size_t layer_number>
+    void evaluate_neuron(size_t neuron_number){
         double value = get_layer<layer_number>().neurons[neuron_number].bias;
 
         for(size_t input_number = 0; input_number < get_neuron_count_at_layer<layer_number-1>(); ++input_number){
@@ -142,7 +153,8 @@ private:
         }
     }
 
-    template<size_t layer_number = layer_count - 2> void calc_gradient_hidden_layers(){
+    template<size_t layer_number = layer_count - 2>
+    void calc_gradient_hidden_layers(){
         auto& layer = get_layer<layer_number>();
         auto& next_layer = get_layer<layer_number + 1>();
         for(size_t neuron_number = 0; neuron_number < get_neuron_count_at_layer<layer_number>(); ++neuron_number){
