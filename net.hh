@@ -116,24 +116,20 @@ private:
     }
 
     template<size_t layer_number, size_t neuron_number = 0> void evaluate_neurons(){
-        double value = evaluate_neuron_connections<layer_number, neuron_number>();
-        value += get_layer<layer_number>().neurons[neuron_number].bias;
+
+        double value = get_layer<layer_number>().neurons[neuron_number].bias;
+
+        for(size_t input_number = 0; input_number < get_neuron_count_at_layer<layer_number-1>(); ++input_number){
+            value += get_layer<layer_number - 1>().neurons[input_number].output * get_layer<layer_number>().neurons[neuron_number].weights[input_number];
+        }
+
         get_layer<layer_number>().neurons[neuron_number].output = value >= 0 ? 1 : 0;
+
         if constexpr(neuron_number < get_neuron_count_at_layer<layer_number>() - 1){
             evaluate_neurons<layer_number, neuron_number + 1>();
         }
-    };
 
-    template<
-        size_t layer_number,
-        size_t neuron_number,
-        size_t input_number = 0>
-    double evaluate_neuron_connections(){
-        double value = get_layer<layer_number-1>().neurons[input_number].output * get_layer<layer_number>().neurons[neuron_number].weights[input_number];
-        if constexpr(input_number < get_neuron_count_at_layer<layer_number - 1>() - 1){
-            value += evaluate_neuron_connections<layer_number, neuron_number, input_number + 1>();
-        }
-        return value;
+
     };
 };
 

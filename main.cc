@@ -59,7 +59,7 @@ void sanity_check(){
 int main() {
 //    sanity_check();
 
-    net<784, 800, 10> net;
+    net<2, 2, 1> net;
 
     net.set_weight<1, 0, 0>(2);
     net.set_weight<1, 0, 1>(2);
