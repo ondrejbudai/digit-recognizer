@@ -109,14 +109,17 @@ private:
 
     template<size_t layer_number = 1> void evaluate_layers(){
         static_assert(layer_number > 0, "First layer cannot be evaluated!");
-        evaluate_neurons<layer_number>();
+
+        for(size_t neuron = 0; neuron < get_neuron_count_at_layer<layer_number>(); ++neuron){
+            evaluate_neuron<layer_number>(neuron);
+        }
+
         if constexpr(layer_number < layer_count - 1){
             evaluate_layers<layer_number+1>();
         }
     }
 
-    template<size_t layer_number, size_t neuron_number = 0> void evaluate_neurons(){
-
+    template<size_t layer_number> void evaluate_neuron(size_t neuron_number){
         double value = get_layer<layer_number>().neurons[neuron_number].bias;
 
         for(size_t input_number = 0; input_number < get_neuron_count_at_layer<layer_number-1>(); ++input_number){
@@ -124,13 +127,7 @@ private:
         }
 
         get_layer<layer_number>().neurons[neuron_number].output = value >= 0 ? 1 : 0;
-
-        if constexpr(neuron_number < get_neuron_count_at_layer<layer_number>() - 1){
-            evaluate_neurons<layer_number, neuron_number + 1>();
-        }
-
-
-    };
+    }
 };
 
 #endif //DIGIT_RECOGNIZER_NET_HH
