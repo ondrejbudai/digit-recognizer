@@ -59,6 +59,7 @@ void sanity_check(){
 int main() {
 //    sanity_check();
 
+    //mnist: 784-800-10
     net<2, 2, 1> net;
 
     net.set_weight<1, 0, 0>(2);

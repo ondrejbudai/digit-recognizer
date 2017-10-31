@@ -1,6 +1,8 @@
 #ifndef DIGIT_RECOGNIZER_NET_HH
 #define DIGIT_RECOGNIZER_NET_HH
 
+#include "meta_helpers.hh"
+
 #include <array>
 #include <tuple>
 
@@ -25,45 +27,6 @@ public:
     }
 };
 
-template <size_t...> struct size_tuple{};
-
-template< std::size_t I, class T >
-struct size_tuple_element;
-
-// recursive case
-template< std::size_t I, size_t Head, size_t... Tail >
-struct size_tuple_element<I, size_tuple<Head, Tail...>>
-    : size_tuple_element<I-1, size_tuple<Tail...>> { };
-
-// base case
-template< size_t Head, size_t... Tail >
-struct size_tuple_element<0,size_tuple<Head, Tail...>> {
-    static constexpr size_t value = Head;
-};
-
-template <size_t ...> struct holder;
-
-template <class T, size_t... Ts> struct foobase;
-
-template <std::size_t... I, size_t... Ts>
-struct foobase<std::index_sequence<I...>, Ts...> {
-    using bar = holder<0, size_tuple_element<I, size_tuple<Ts...>>::value...>;
-};
-
-template <size_t... Ts> struct foo
-    : foobase<std::make_index_sequence<sizeof...(Ts) - 1>, Ts...>
-{
-};
-
-template<size_t ...Args1> struct zip {
-    template<class> struct with;
-
-    template<size_t ...Args2>
-    struct with<holder<Args2...>> {
-        using type = std::tuple<layer<Args1, Args2>...>;
-    };
-};
-
 template<size_t... args> class net {
 public:
     template<size_t input_number> void set_input(double value){
@@ -79,6 +42,10 @@ public:
         return neuron.output;
     }
 
+    template<size_t output_number> void set_target_output(double value){
+        target_values[output_number] = value;
+    }
+
     template<size_t layer_number, size_t neuron_number, size_t input_number> void set_weight(double weight){
         auto& layer = get_layer<layer_number>();
         auto& neuron = layer.template get_neuron<neuron_number>();
@@ -91,13 +58,16 @@ public:
         neuron.bias = bias;
     };
 
-    void evaluate(){
+    void evaluate() {
         evaluate_layers();
     }
 
 private:
     static constexpr size_t layer_count = sizeof...(args);
-    typename zip<args...>::template with<typename foo<args...>::bar>::type layers;
+    typename zip<size_t, std::tuple, layer, args...>::template with<typename remove_last_from_size_typle<args...>::type>::type layers;
+
+    static constexpr size_t output_count = size_tuple_element<layer_count - 1, size_tuple<args...>>::value;
+    std::array<double, output_count> target_values;
 
     template<size_t layer_number> static constexpr size_t get_neuron_count_at_layer(){
         return std::tuple_element<layer_number, decltype(layers)>::type::neuron_count;
