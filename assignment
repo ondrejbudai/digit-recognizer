@@ -1,0 +1,69 @@
+Hello,
+
+Your task is simple. Implement feed forward neural network in C, C++, Java and
+train it on given dataset using back propagation algorithm. Dataset is well
+known and quite easy - MNIST [1]. Already unzipped data in csv format will be
+uploaded in IS in study materials. There are four files, two files as input
+vectors for training and testing data and two files with list of expected
+predictions.
+
+Some rules about implementations:
+
+1. Implementation must be compilable and runnable on Aisa server.
+2. Project must contain runnable script called "RUN" which compiles and runs
+everything on "one click".
+3. Implementation must export vector of train and test predictions.
+3a. Exported predictions must be in same format as is file
+"actualPredictionsExample". So on each line only one number which stands for
+class index (there are classes 0 - 9 for MNIST). Also, name the exported files
+"trainPredictions" and "actualTestPredictions".
+4. Implementation will take both train and test input vectors, but it musn't
+touch input vector except of evaluation of already trained model.
+4a. If any implementation will touch given test data before evaluation
+of already trained model, it will be automatically marked as failed project.
+4b. Why is that - optimal scenario would hide for you any test data, but
+in that case you would have to deal with serialization and deserialization of
+your implementations and you would have to be bound to some given interface and
+this is not wanted in this course.
+4c. Don't cheat, your implementations will be checked.
+5. It's demanded to reach at least 95% of correct predictions (overall accuracy)
+with given at most half an hour.
+5a. Implementations will be executed for little longer, let's say for 35
+minutes. In that time, it should be able to load data, process them, train
+neural network and export predictions out in file.
+6. Correctness will be checked using independent program which will be also
+provided for your own purposes.
+7. Use of high level libraries is forbidden. In fact you don't need any.
+8. What you do internally with train dataset is up to you.
+
+
+You can make your own implementation or you can make teams of two. If there are
+any problems, don't hesitate to contact me [2]. If you are struggeling with
+network performance, contact me.
+
+Some tips:
+
+- solve XOR problem first. XOR is very nice example as benchmark of working
+learning with at least one hidden layer. Btw, presented network solving XOR on
+lecture is minimal and it can be hard to find, so consider more neurons in
+hidden layer. If you can't solve XOR problem, you can't solve MNIST.
+- reuse memory. You are implementing iterative process so don't allocate new
+vectors and matrices all the time. Immutable approach is nice, but very
+inappropriate. Also - don't copy data in some cache all the time, use indexes.
+- objects are fine, but be careful about depth of object hierarchy you are
+going to create. Always remember that you are trying to be fast.
+- double precision is fine. You may try use floats. Do not use BigDecimals or
+any other high precision objects.
+- simple SGD is not strong enough, you are going to need implement some
+heuristics as well (or maybe not, but it's highly recommended). I suggest
+heuristics: momentum, weight decay, dropout. If you are brave enough, you can
+try RMSProp/AdaGrad/Adam.
+- start with smaller networks and increase network topology carefully.
+- play with hyperparameters.
+- consider validation of model using part of train dataset
+
+
+Sincerely,
+Jiří Vahala
+vahy@mail.muni.cz
+PV021 Neural networks
