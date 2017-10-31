@@ -6,28 +6,53 @@
 #include <array>
 #include <tuple>
 
-template<size_t neuron_count_in_previous_layer> class nneuron {
+struct step_function {
+    static double eval(double input){
+        return 1 ? input >= 0 : 0;
+    }
+
+    static double derivative(double){
+        std::abort();
+    }
+};
+
+struct sigmoid_function {
+    static double eval(double input){
+        return 1 / (1 + exp(-input));
+    }
+
+    static double derivative(double input){
+        return input * (1 - input);
+    }
+};
+
+template<size_t neuron_count_in_previous_layer> class neuron {
 public:
-    nneuron(){
+    neuron(){
         weights.fill(0);
     }
     std::array<double, neuron_count_in_previous_layer> weights;
     double output;
     double bias;
+    double gradient;
 };
 
 template<size_t neuron_count_, size_t neuron_count_in_previous_layer>
 class layer {
 public:
     static constexpr size_t neuron_count = neuron_count_;
-    std::array<nneuron<neuron_count_in_previous_layer>, neuron_count> neurons;
+    std::array<neuron<neuron_count_in_previous_layer>, neuron_count> neurons;
     template<size_t neuron_number> auto& get_neuron(){
         static_assert(neuron_number < neuron_count);
         return neurons[neuron_number];
     }
+
+    auto& get_neuron(size_t neuron_number){
+        return neurons[neuron_number];
+    }
 };
 
-template<size_t... args> class net {
+template<typename ActivationFunction, size_t... args> class net {
 public:
     template<size_t input_number> void set_input(double value){
         auto& layer = get_layer<0>();
@@ -62,8 +87,15 @@ public:
         evaluate_layers();
     }
 
+    void calc_gradient() {
+        calc_gradient_output_layer();
+        calc_gradient_hidden_layers();
+    }
+
 private:
     static constexpr size_t layer_count = sizeof...(args);
+    static_assert(layer_count >= 3);
+
     typename zip<size_t, std::tuple, layer, args...>::template with<typename remove_last_from_size_tuple<args...>::type>::type layers;
 
     static constexpr size_t output_count = size_tuple_element<layer_count - 1, size_tuple<args...>>::value;
@@ -96,7 +128,37 @@ private:
             value += get_layer<layer_number - 1>().neurons[input_number].output * get_layer<layer_number>().neurons[neuron_number].weights[input_number];
         }
 
-        get_layer<layer_number>().neurons[neuron_number].output = value >= 0 ? 1 : 0;
+        get_layer<layer_number>().neurons[neuron_number].output = ActivationFunction::eval(value);
+    }
+
+    void calc_gradient_output_layer(){
+        //TODO: move me to fields
+        auto& output_layer = get_layer<output_count - 1>();
+
+        for(size_t output_neuron = 0; output_neuron < output_count; ++output_neuron){
+            auto& neuron = output_layer.get_neuron(output_neuron);
+            double gradient = (target_values[output_neuron] - neuron.output) * ActivationFunction::derivative(neuron.output);
+            neuron.gradient = gradient;
+        }
+    }
+
+    template<size_t layer_number = layer_count - 2> void calc_gradient_hidden_layers(){
+        auto& layer = get_layer<layer_number>();
+        auto& next_layer = get_layer<layer_number + 1>();
+        for(size_t neuron_number = 0; neuron_number < get_neuron_count_at_layer<layer_number>(); ++neuron_number){
+            auto& neuron = layer.get_neuron(neuron_number);
+            double gradient = 0;
+            for(size_t output_neuron_number = 0; output_neuron_number < get_neuron_count_at_layer<layer_number + 1>(); ++output_neuron_number){
+                const auto& output_neuron = next_layer.get_neuron(output_neuron_number);
+                gradient += output_neuron.gradient + output_neuron.weights[neuron_number];
+            }
+
+            neuron.gradient = gradient * ActivationFunction::derivative(neuron.output);
+        }
+
+        if constexpr (layer_number > 1){
+            calc_gradient_hidden_layers<layer_number - 1>();
+        }
     }
 };
 
