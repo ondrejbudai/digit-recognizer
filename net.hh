@@ -64,7 +64,7 @@ public:
 
 private:
     static constexpr size_t layer_count = sizeof...(args);
-    typename zip<size_t, std::tuple, layer, args...>::template with<typename remove_last_from_size_typle<args...>::type>::type layers;
+    typename zip<size_t, std::tuple, layer, args...>::template with<typename remove_last_from_size_tuple<args...>::type>::type layers;
 
     static constexpr size_t output_count = size_tuple_element<layer_count - 1, size_tuple<args...>>::value;
     std::array<double, output_count> target_values;

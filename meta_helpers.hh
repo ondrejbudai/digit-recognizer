@@ -19,15 +19,15 @@ struct size_tuple_element<0,size_tuple<Head, Tail...>> {
     static constexpr size_t value = Head;
 };
 
-template <class T, size_t... Ts> struct remove_last_from_size_typle_base;
+template <class T, size_t... Ts> struct remove_last_from_size_tuple_base;
 
 template <std::size_t... I, size_t... Ts>
-struct remove_last_from_size_typle_base<std::index_sequence<I...>, Ts...> {
+struct remove_last_from_size_tuple_base<std::index_sequence<I...>, Ts...> {
 using type = size_tuple<0, size_tuple_element<I, size_tuple<Ts...>>::value...>;
 };
 
-template <size_t... Ts> struct remove_last_from_size_typle
-    : remove_last_from_size_typle_base<std::make_index_sequence<sizeof...(Ts) - 1>, Ts...>
+template <size_t... Ts> struct remove_last_from_size_tuple
+    : remove_last_from_size_tuple_base<std::make_index_sequence<sizeof...(Ts) - 1>, Ts...>
 {
 };
 
