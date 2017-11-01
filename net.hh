@@ -5,20 +5,17 @@
 
 #include <array>
 #include <tuple>
+#include <functional>
 
 struct step_function {
     static double eval(double input){
-        return 1 ? input >= 0 : 0;
-    }
-
-    static double derivative(double){
-        std::abort();
+        return input >= 0 ? 1 : 0;
     }
 };
 
 struct sigmoid_function {
     static double eval(double input){
-        return 1 / (1 + exp(-input));
+        return 1. / (1. + exp(-input));
     }
 
     static double derivative(double input){
@@ -26,14 +23,27 @@ struct sigmoid_function {
     }
 };
 
+struct hyperbolic_tangent {
+    static double eval(double input){
+        return tanh(input);
+    }
+
+    static double derivative(double input){
+        return 1 - input * input;
+    }
+};
+
 template<size_t neuron_count_in_previous_layer>
 struct neuron {
     neuron(){
         weights.fill(0);
+        deltas.fill(0);
     }
     std::array<double, neuron_count_in_previous_layer> weights;
+    std::array<double, neuron_count_in_previous_layer> deltas;
     double output = 0.;
     double bias = 0.;
+    double biasdelta = 0.;
     double gradient = 0.;
 };
 
@@ -73,6 +83,7 @@ public:
 
     template<size_t output_number>
     void set_target_output(double value){
+        static_assert(output_number < output_count);
         target_values[output_number] = value;
     }
 
@@ -97,6 +108,14 @@ public:
     void calc_gradient() {
         calc_gradient_output_layer();
         calc_gradient_hidden_layers();
+    }
+
+    void update_weights() {
+        update_weights_layers();
+    }
+
+    void random_initialize(const std::function<double()>& random_gen){
+        random_initialize_layers(random_gen);
     }
 
 private:
@@ -144,7 +163,7 @@ private:
 
     void calc_gradient_output_layer(){
         //TODO: move me to fields
-        auto& output_layer = get_layer<output_count - 1>();
+        auto& output_layer = get_layer<layer_count - 1>();
 
         for(size_t output_neuron = 0; output_neuron < output_count; ++output_neuron){
             auto& neuron = output_layer.get_neuron(output_neuron);
@@ -155,21 +174,72 @@ private:
 
     template<size_t layer_number = layer_count - 2>
     void calc_gradient_hidden_layers(){
-        auto& layer = get_layer<layer_number>();
-        auto& next_layer = get_layer<layer_number + 1>();
         for(size_t neuron_number = 0; neuron_number < get_neuron_count_at_layer<layer_number>(); ++neuron_number){
-            auto& neuron = layer.get_neuron(neuron_number);
-            double gradient = 0;
-            for(size_t output_neuron_number = 0; output_neuron_number < get_neuron_count_at_layer<layer_number + 1>(); ++output_neuron_number){
-                const auto& output_neuron = next_layer.get_neuron(output_neuron_number);
-                gradient += output_neuron.gradient + output_neuron.weights[neuron_number];
-            }
-
-            neuron.gradient = gradient * ActivationFunction::derivative(neuron.output);
+            calc_gradient_hidden_layer_neuron<layer_number>(neuron_number);
         }
 
         if constexpr (layer_number > 1){
             calc_gradient_hidden_layers<layer_number - 1>();
+        }
+    }
+
+    template<size_t layer_number>
+    void calc_gradient_hidden_layer_neuron(size_t neuron_number){
+        auto& layer = get_layer<layer_number>();
+        auto& next_layer = get_layer<layer_number + 1>();
+
+        auto& neuron = layer.get_neuron(neuron_number);
+        double gradient = 0;
+        for(size_t output_neuron_number = 0; output_neuron_number < get_neuron_count_at_layer<layer_number + 1>(); ++output_neuron_number){
+            const auto& output_neuron = next_layer.get_neuron(output_neuron_number);
+            gradient += output_neuron.gradient * output_neuron.weights[neuron_number];
+        }
+
+        gradient *= ActivationFunction::derivative(neuron.output);
+
+        neuron.gradient = gradient;
+    }
+
+    template<size_t layer_number = 1>
+    void update_weights_layers(){
+        for(size_t neuron_number = 0; neuron_number < get_neuron_count_at_layer<layer_number>(); ++neuron_number){
+            update_weights_layer_neuron<layer_number>(neuron_number);
+        }
+
+        if constexpr (layer_number < layer_count - 1){
+            update_weights_layers<layer_number + 1>();
+        }
+    }
+
+    template<size_t layer_number>
+    void update_weights_layer_neuron(const size_t neuron_number){
+        auto& layer = get_layer<layer_number>();
+        auto& prev_layer = get_layer<layer_number-1>();
+        auto& neuron = layer.get_neuron(neuron_number);
+
+        for(size_t input_neuron = 0; input_neuron < get_neuron_count_at_layer<layer_number - 1>(); ++input_neuron){
+            double newdelta = 0.15 * prev_layer.neurons[input_neuron].output * neuron.gradient + 0.5 * neuron.deltas[input_neuron];
+            neuron.weights[input_neuron] += newdelta;
+            neuron.deltas[input_neuron] = newdelta;
+        }
+        double newdelta = 0.15 * neuron.bias * neuron.gradient + 0.5 * neuron.biasdelta;
+        neuron.bias += newdelta;
+        neuron.biasdelta = newdelta;
+    }
+
+    template <size_t layer_number = 1>
+    void random_initialize_layers(const std::function<double()>& random_gen){
+        for(size_t neuron_number = 0; neuron_number < get_neuron_count_at_layer<layer_number>(); ++neuron_number){
+            auto& layer = get_layer<layer_number>();
+            auto& neuron = layer.get_neuron(neuron_number);
+
+            std::generate(std::begin(neuron.weights), std::end(neuron.weights), random_gen);
+
+            neuron.bias = random_gen();
+        }
+
+        if constexpr (layer_number < layer_count - 1){
+            random_initialize_layers<layer_number + 1>(random_gen);
         }
     }
 };
