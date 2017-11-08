@@ -4,4 +4,4 @@ project(digit_recognizer)
 set(CMAKE_CXX_STANDARD 17)
 
 add_executable(digit_recognizer main.cc net.hh meta_helpers.hh)
-target_compile_options(digit_recognizer PUBLIC -O2 -Wall -Wextra)
+target_compile_options(digit_recognizer PUBLIC -O3 -Wall -Wextra)

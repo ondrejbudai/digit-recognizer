@@ -58,7 +58,16 @@ struct layer {
         return neurons[neuron_number];
     }
 
+    template<size_t neuron_number>
+    const auto& get_neuron() const{
+        static_assert(neuron_number < neuron_count);
+        return neurons[neuron_number];
+    }
+
     auto& get_neuron(size_t neuron_number){
+        return neurons[neuron_number];
+    }
+    const auto& get_neuron(size_t neuron_number) const{
         return neurons[neuron_number];
     }
 };
@@ -73,10 +82,23 @@ public:
         neuron.output = value;
     }
 
+    void set_input(size_t input_number, double value){
+        auto& layer = get_layer<0>();
+        auto& neuron = layer.get_neuron(input_number);
+        neuron.output = value;
+    }
+
     template<size_t output_number>
-    double get_output(){
-        auto& layer = get_layer<layer_count - 1>();
-        auto& neuron = layer.template get_neuron<output_number>();
+    double get_output() const {
+        const auto& layer = get_layer<layer_count - 1>();
+        const auto& neuron = layer.template get_neuron<output_number>();
+
+        return neuron.output;
+    }
+
+    double get_output(size_t output_number) const {
+        const auto& layer = get_layer<layer_count - 1>();
+        const auto& neuron = layer.get_neuron(output_number);
 
         return neuron.output;
     }
@@ -87,11 +109,22 @@ public:
         target_values[output_number] = value;
     }
 
+    void set_target_output(size_t output_number, double value){
+        target_values[output_number] = value;
+    }
+
     template<size_t layer_number, size_t neuron_number, size_t input_number>
     void set_weight(double weight){
         auto& layer = get_layer<layer_number>();
         auto& neuron = layer.template get_neuron<neuron_number>();
         neuron.weights[input_number] = weight;
+    };
+
+    template<size_t layer_number, size_t neuron_number, size_t input_number>
+    double get_weight(){
+        auto& layer = get_layer<layer_number>();
+        auto& neuron = layer.template get_neuron<neuron_number>();
+        return neuron.weights[input_number];
     };
 
     template<size_t layer_number, size_t neuron_number>
@@ -118,6 +151,10 @@ public:
         random_initialize_layers(random_gen);
     }
 
+    constexpr auto get_output_count() const{
+        return output_count;
+    }
+
 private:
     static constexpr size_t layer_count = sizeof...(args);
     static_assert(layer_count >= 3);
@@ -125,7 +162,7 @@ private:
     typename zip<size_t, std::tuple, layer, args...>::template with<typename remove_last_from_size_tuple<args...>::type>::type layers;
 
     static constexpr size_t output_count = size_tuple_element<layer_count - 1, size_tuple<args...>>::value;
-    std::array<double, output_count> target_values;
+    std::array<double, output_count> target_values{};
 
     template<size_t layer_number>
     static constexpr size_t get_neuron_count_at_layer(){
@@ -134,6 +171,11 @@ private:
 
     template<size_t layer_number>
     auto& get_layer(){
+        return std::get<layer_number>(layers);
+    }
+
+    template<size_t layer_number>
+    const auto& get_layer() const {
         return std::get<layer_number>(layers);
     }
 
@@ -152,13 +194,14 @@ private:
 
     template<size_t layer_number>
     void evaluate_neuron(size_t neuron_number){
-        double value = get_layer<layer_number>().neurons[neuron_number].bias;
+        auto& neuron = get_layer<layer_number>().neurons[neuron_number];
+        double value = neuron.bias;
 
         for(size_t input_number = 0; input_number < get_neuron_count_at_layer<layer_number-1>(); ++input_number){
-            value += get_layer<layer_number - 1>().neurons[input_number].output * get_layer<layer_number>().neurons[neuron_number].weights[input_number];
+            value += get_layer<layer_number - 1>().neurons[input_number].output * neuron.weights[input_number];
         }
 
-        get_layer<layer_number>().neurons[neuron_number].output = ActivationFunction::eval(value);
+        neuron.output = ActivationFunction::eval(value);
     }
 
     void calc_gradient_output_layer(){
@@ -218,11 +261,11 @@ private:
         auto& neuron = layer.get_neuron(neuron_number);
 
         for(size_t input_neuron = 0; input_neuron < get_neuron_count_at_layer<layer_number - 1>(); ++input_neuron){
-            double newdelta = 0.15 * prev_layer.neurons[input_neuron].output * neuron.gradient + 0.5 * neuron.deltas[input_neuron];
+            double newdelta = 0.001 * prev_layer.neurons[input_neuron].output * neuron.gradient + 0.5 * neuron.deltas[input_neuron];
             neuron.weights[input_neuron] += newdelta;
             neuron.deltas[input_neuron] = newdelta;
         }
-        double newdelta = 0.15 * neuron.bias * neuron.gradient + 0.5 * neuron.biasdelta;
+        double newdelta = 0.001 * neuron.bias * neuron.gradient + 0.5 * neuron.biasdelta;
         neuron.bias += newdelta;
         neuron.biasdelta = newdelta;
     }
