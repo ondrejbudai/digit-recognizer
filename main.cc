@@ -136,7 +136,7 @@ void benchmark(){
     constexpr int iterations = 10000000;
 
     std::mt19937 random;
-    std::uniform_int_distribution dist(0, 1);
+    std::uniform_int_distribution<int> dist(0, 1);
 
     {
         auto begin = std::clock();
@@ -166,7 +166,7 @@ void xor_test() {
     });
 
     constexpr size_t iterations = 10000;
-    std::uniform_int_distribution dis_int(0, 1);
+    std::uniform_int_distribution<int> dis_int(0, 1);
 
     for(size_t i = 0; i < iterations; ++i){
         int a = dis_int(gen);
@@ -223,12 +223,12 @@ int main() {
     std::cout << std::setprecision(20);
     //mnist: 784-800-10
 
-    sanity_check();
+//    sanity_check();
 
     dataset_t dataset{};
     dataset.load("MNIST_DATA/mnist_train_vectors.csv", "MNIST_DATA/mnist_train_labels.csv");
 
-    auto network = std::make_unique<net<hyperbolic_tangent, 784, 800, 400, 10>>();
+    auto network = std::make_unique<net<hyperbolic_tangent, 784, 400, 200, 10>>();
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -238,7 +238,10 @@ int main() {
         return dis(gen);
     });
 
+    network->set_learning_rate(0.001);
+
     size_t last_target = 0;
+    int iterations = 0;
     for(const auto& sample: dataset.data) {
         size_t input_number = 0;
         for(auto input: sample.inputs) {
@@ -252,11 +255,19 @@ int main() {
 
         network->calc_gradient();
         network->update_weights();
+
+        if(iterations % 6000 == 0) {
+//            network->set_learning_rate(network->get_learning_rate() * 0.5);
+            std::cerr << "Learning: " << iterations / 600 << "%" << std::endl;
+        }
+        ++iterations;
     }
 
     auto test_dataset = dataset_t{};
     int ok = 0;
     test_dataset.load("MNIST_DATA/mnist_test_vectors.csv", "MNIST_DATA/mnist_test_labels.csv");
+
+    network->dropout_enabled = false;
     for(const auto& sample: test_dataset.data){
         size_t input_number = 0;
         for(auto input: sample.inputs){

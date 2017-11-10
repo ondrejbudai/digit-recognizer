@@ -39,12 +39,15 @@ struct neuron {
         weights.fill(0);
         deltas.fill(0);
     }
-    std::array<double, neuron_count_in_previous_layer> weights;
-    std::array<double, neuron_count_in_previous_layer> deltas;
+    std::array<double, neuron_count_in_previous_layer> weights{};
+    std::array<double, neuron_count_in_previous_layer> deltas{};
+    std::array<double, neuron_count_in_previous_layer> current_deltas{};
     double output = 0.;
     double bias = 0.;
+    double bias_current_delta = 0.;
     double biasdelta = 0.;
     double gradient = 0.;
+    bool enabled = true;
 };
 
 template<size_t neuron_count_, size_t neuron_count_in_previous_layer>
@@ -145,6 +148,7 @@ public:
 
     void update_weights() {
         update_weights_layers();
+        current_batch = (current_batch + 1) % batch_size;
     }
 
     void random_initialize(const std::function<double()>& random_gen){
@@ -155,6 +159,16 @@ public:
         return output_count;
     }
 
+    void set_learning_rate(double new_learning_rate){
+        learning_rate = new_learning_rate;
+    }
+
+    double get_learning_rate(){
+        return learning_rate;
+    }
+
+    bool dropout_enabled = false;
+
 private:
     static constexpr size_t layer_count = sizeof...(args);
     static_assert(layer_count >= 3);
@@ -163,6 +177,14 @@ private:
 
     static constexpr size_t output_count = size_tuple_element<layer_count - 1, size_tuple<args...>>::value;
     std::array<double, output_count> target_values{};
+
+    double learning_rate = 0;
+    double dropout_probability = 0.1;
+
+    std::mt19937 rd{std::random_device{}()};
+    std::uniform_real_distribution<double> dis{0, 1};
+    size_t batch_size = 1;
+    size_t current_batch = 0;
 
     template<size_t layer_number>
     static constexpr size_t get_neuron_count_at_layer(){
@@ -196,9 +218,22 @@ private:
     void evaluate_neuron(size_t neuron_number){
         auto& neuron = get_layer<layer_number>().neurons[neuron_number];
         double value = neuron.bias;
+        if(dropout_enabled) {
+            neuron.enabled = dis(rd) < (1 - dropout_probability);
+        } else {
+            neuron.enabled = true;
+        }
+        if(!neuron.enabled){
+            neuron.output = 0;
+            return;
+        }
 
         for(size_t input_number = 0; input_number < get_neuron_count_at_layer<layer_number-1>(); ++input_number){
             value += get_layer<layer_number - 1>().neurons[input_number].output * neuron.weights[input_number];
+        }
+
+        if(dropout_enabled){
+            value /= (1 - dropout_probability);
         }
 
         neuron.output = ActivationFunction::eval(value);
@@ -210,7 +245,8 @@ private:
 
         for(size_t output_neuron = 0; output_neuron < output_count; ++output_neuron){
             auto& neuron = output_layer.get_neuron(output_neuron);
-            double gradient = (target_values[output_neuron] - neuron.output) * ActivationFunction::derivative(neuron.output);
+            auto error = target_values[output_neuron] - neuron.output;
+            double gradient = error /** std::abs(error)*/ * ActivationFunction::derivative(neuron.output);
             neuron.gradient = gradient;
         }
     }
@@ -232,6 +268,9 @@ private:
         auto& next_layer = get_layer<layer_number + 1>();
 
         auto& neuron = layer.get_neuron(neuron_number);
+        if(!neuron.enabled){
+            return;
+        }
         double gradient = 0;
         for(size_t output_neuron_number = 0; output_neuron_number < get_neuron_count_at_layer<layer_number + 1>(); ++output_neuron_number){
             const auto& output_neuron = next_layer.get_neuron(output_neuron_number);
@@ -260,14 +299,31 @@ private:
         auto& prev_layer = get_layer<layer_number-1>();
         auto& neuron = layer.get_neuron(neuron_number);
 
-        for(size_t input_neuron = 0; input_neuron < get_neuron_count_at_layer<layer_number - 1>(); ++input_neuron){
-            double newdelta = 0.001 * prev_layer.neurons[input_neuron].output * neuron.gradient + 0.5 * neuron.deltas[input_neuron];
-            neuron.weights[input_neuron] += newdelta;
-            neuron.deltas[input_neuron] = newdelta;
+        if(!neuron.enabled){
+            return;
         }
-        double newdelta = 0.001 * neuron.bias * neuron.gradient + 0.5 * neuron.biasdelta;
-        neuron.bias += newdelta;
-        neuron.biasdelta = newdelta;
+
+        for(size_t input_neuron = 0; input_neuron < get_neuron_count_at_layer<layer_number - 1>(); ++input_neuron){
+            if(!prev_layer.neurons[input_neuron].enabled){
+                continue;
+            }
+            double newdelta = learning_rate * prev_layer.neurons[input_neuron].output * neuron.gradient;
+            neuron.current_deltas[input_neuron] += newdelta;
+
+            if(current_batch == batch_size - 1){
+                neuron.current_deltas[input_neuron] += 0.8 * neuron.deltas[input_neuron];
+                neuron.weights[input_neuron] += neuron.current_deltas[input_neuron]/* - neuron.weights[input_neuron] * 0.0000005*/;
+                neuron.deltas[input_neuron] = neuron.current_deltas[input_neuron];
+                neuron.current_deltas[input_neuron] = 0;
+            }
+        }
+        neuron.bias_current_delta += learning_rate * neuron.bias * neuron.gradient;
+        if(current_batch == batch_size - 1){
+            neuron.bias_current_delta += 0.8 * neuron.biasdelta;
+            neuron.bias += neuron.bias_current_delta/* - neuron.bias * 0.000001*/;
+            neuron.biasdelta = neuron.bias_current_delta;
+            neuron.bias_current_delta = 0;
+        }
     }
 
     template <size_t layer_number = 1>
