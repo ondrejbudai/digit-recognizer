@@ -36,7 +36,7 @@ private:
         data.emplace_back();
         size_t col = 0;
         while(input_stream >> tmp){
-            data.back().inputs[col] = tmp / 255.0;
+            data.back().inputs[col] = tmp / 127.5 - 1;
             col++;
 
             int next_char = input_stream.get();
@@ -89,71 +89,71 @@ private:
 void sanity_check(){
     net<step_function, 2, 2, 1> net;
 
-    net.set_weight<1, 0, 0>(2);
-    net.set_weight<1, 0, 1>(2);
-    net.set_bias<1, 0>(-1);
-    net.set_weight<1, 1, 0>(-2);
-    net.set_weight<1, 1, 1>(-2);
-    net.set_bias<1, 1>(3);
-    net.set_weight<2, 0, 0>(1);
-    net.set_weight<2, 0, 1>(1);
-    net.set_bias<2, 0>(-2);
+    net.set_weight<1>(0, 0, 2);
+    net.set_weight<1>(0, 1, 2);
+    net.set_bias<1>(0, -1);
+    net.set_weight<1>(1, 0, -2);
+    net.set_weight<1>(1, 1, -2);
+    net.set_bias<1>(1, 3);
+    net.set_weight<2>(0, 0, 1);
+    net.set_weight<2>(0, 1, 1);
+    net.set_bias<2>(0, -2);
 
-    net.set_input<0>(0);
-    net.set_input<1>(0);
+    net.set_input(0, 0);
+    net.set_input(1, 0);
     net.evaluate();
-    assert(net.get_output<0>() == 0);
+    assert(net.get_output(0) == 0);
 
-    net.set_input<0>(0);
-    net.set_input<1>(1);
+    net.set_input(0, 0);
+    net.set_input(1, 1);
     net.evaluate();
-    assert(net.get_output<0>() == 1);
+    assert(net.get_output(0) == 1);
 
-    net.set_input<0>(1);
-    net.set_input<1>(0);
+    net.set_input(0, 1);
+    net.set_input(1, 0);
     net.evaluate();
-    assert(net.get_output<0>() == 1);
+    assert(net.get_output(0) == 1);
 
-    net.set_input<0>(1);
-    net.set_input<1>(1);
+    net.set_input(0, 1);
+    net.set_input(1, 1);
     net.evaluate();
-    assert(net.get_output<0>() == 0);
+    assert(net.get_output(0) == 0);
 }
-
-void benchmark(){
-    net<step_function, 2, 2, 1> network;
-
-    network.set_weight<1, 0, 0>(2);
-    network.set_weight<1, 0, 1>(2);
-    network.set_bias<1, 0>(-1);
-    network.set_weight<1, 1, 0>(-2);
-    network.set_weight<1, 1, 1>(-2);
-    network.set_bias<1, 1>(3);
-    network.set_weight<2, 0, 0>(1);
-    network.set_weight<2, 0, 1>(1);
-    network.set_bias<2, 0>(-2);
-
-    constexpr int iterations = 10000000;
-
-    std::mt19937 random;
-    std::uniform_int_distribution<int> dist(0, 1);
-
-    {
-        auto begin = std::clock();
-        for(int i = 0; i < iterations; ++i) {
-            auto a = random() & 1;
-            auto b = random() & 1;
-
-            network.set_input<0>(a);
-            network.set_input<1>(b);
-            network.evaluate();
-            assert(network.get_output<0>() == (a ^ b));
-        }
-        auto end = std::clock();
-        std::cout << "template: " << (1000. * (end - begin) / CLOCKS_PER_SEC) << std::endl;
-    }
-}
-
+//
+//void benchmark(){
+//    net<step_function, 2, 2, 1> network;
+//
+//    network.set_weight<1, 0, 0>(2);
+//    network.set_weight<1, 0, 1>(2);
+//    network.set_bias<1, 0>(-1);
+//    network.set_weight<1, 1, 0>(-2);
+//    network.set_weight<1, 1, 1>(-2);
+//    network.set_bias<1, 1>(3);
+//    network.set_weight<2, 0, 0>(1);
+//    network.set_weight<2, 0, 1>(1);
+//    network.set_bias<2, 0>(-2);
+//
+//    constexpr int iterations = 10000000;
+//
+//    std::mt19937 random;
+//    std::uniform_int_distribution<int> dist(0, 1);
+//
+//    {
+//        auto begin = std::clock();
+//        for(int i = 0; i < iterations; ++i) {
+//            auto a = random() & 1;
+//            auto b = random() & 1;
+//
+//            network.set_input<0>(a);
+//            network.set_input<1>(b);
+//            network.evaluate();
+//            assert(network.get_output<0>() == (a ^ b));
+//        }
+//        auto end = std::clock();
+//        std::cout << "template: " << (1000. * (end - begin) / CLOCKS_PER_SEC) << std::endl;
+//    }
+//}
+//
 void xor_test() {
     net<hyperbolic_tangent, 2, 4, 1> xor_net;
 
@@ -172,10 +172,10 @@ void xor_test() {
         int a = dis_int(gen);
         int b = dis_int(gen);
 
-        xor_net.set_input<0>(a);
-        xor_net.set_input<1>(b);
+        xor_net.set_input(0, a);
+        xor_net.set_input(1, b);
         xor_net.evaluate();
-        xor_net.set_target_output<0>(a ^ b);
+        xor_net.set_target_output(0, a ^ b);
         xor_net.calc_gradient();
         xor_net.update_weights();
     }
@@ -187,10 +187,10 @@ void xor_test() {
         int a = dis_int(gen);
         int b = dis_int(gen);
 
-        xor_net.set_input<0>(a);
-        xor_net.set_input<1>(b);
+        xor_net.set_input(0, a);
+        xor_net.set_input(1, b);
         xor_net.evaluate();
-        double raw_output = xor_net.get_output<0>();
+        double raw_output = xor_net.get_output(0);
         if(raw_output > 0.1 && raw_output < 0.9){
             undecided++;
             continue;
@@ -221,14 +221,18 @@ size_t get_best_output(const Net& net){
 int main() {
 
     std::cout << std::setprecision(20);
+    matrix_multiplication_test();
+
+
     //mnist: 784-800-10
 
 //    sanity_check();
+//    xor_test();
 
     dataset_t dataset{};
     dataset.load("MNIST_DATA/mnist_train_vectors.csv", "MNIST_DATA/mnist_train_labels.csv");
 
-    auto network = std::make_unique<net<hyperbolic_tangent, 784, 400, 200, 10>>();
+    auto network = std::make_unique<net<hyperbolic_tangent, 784, 800, 400, 10>>();
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -242,25 +246,30 @@ int main() {
 
     size_t last_target = 0;
     int iterations = 0;
-    for(const auto& sample: dataset.data) {
-        size_t input_number = 0;
-        for(auto input: sample.inputs) {
-            network->set_input(input_number++, input);
-        }
-        network->evaluate();
+    for(int i = 0; i < 2; ++i) {
+        for(const auto& sample: dataset.data) {
+            size_t input_number = 0;
+            for(auto input: sample.inputs) {
+                network->set_input(input_number++, input);
+            }
+            network->evaluate();
 
-        network->set_target_output(last_target, 0);
-        last_target = static_cast<size_t>(sample.target);
-        network->set_target_output(last_target, 1);
+            for(size_t i = 0; i < 10; ++i) {
+                network->set_target_output(i, 0);
 
-        network->calc_gradient();
-        network->update_weights();
+            }
+            network->set_target_output(static_cast<size_t>(sample.target), 1);
 
-        if(iterations % 6000 == 0) {
+            network->calc_gradient();
+            network->update_weights();
+
+            if(iterations % 600 == 0) {
 //            network->set_learning_rate(network->get_learning_rate() * 0.5);
-            std::cerr << "Learning: " << iterations / 600 << "%" << std::endl;
+                std::cerr << "Learning: " << iterations / 600 << "%"
+                          << std::endl;
+            }
+            ++iterations;
         }
-        ++iterations;
     }
 
     auto test_dataset = dataset_t{};
@@ -271,7 +280,7 @@ int main() {
     for(const auto& sample: test_dataset.data){
         size_t input_number = 0;
         for(auto input: sample.inputs){
-            network->set_input(input_number++, input);
+            network->set_input(++input_number, input);
         }
 
         network->evaluate();

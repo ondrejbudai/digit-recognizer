@@ -2,20 +2,22 @@
 #define DIGIT_RECOGNIZER_NET_HH
 
 #include "meta_helpers.hh"
+#include "array_operations.hh"
 
 #include <array>
 #include <tuple>
 #include <functional>
 
 struct step_function {
-    static double eval(double input){
-        return input >= 0 ? 1 : 0;
+    template<size_t Values, typename Type>
+    static void eval(vector_t<Values, Type>& input){
+        input.apply([](auto input) {return input >= 0 ? decltype(input)(1.) : 0.;});
     }
 };
 
 struct sigmoid_function {
     static double eval(double input){
-        return 1. / (1. + exp(-input));
+        return 1. / (1. + std::exp(-input));
     }
 
     static double derivative(double input){
@@ -23,119 +25,148 @@ struct sigmoid_function {
     }
 };
 
+struct relu {
+    template<size_t Values, typename Type>
+    static void eval(vector_t<Values, Type>& input){
+        input.apply([](auto value){return std::max(value, decltype(value)(0.));});
+    }
+
+    template<size_t Values, typename Type>
+    static void derivative(vector_t<Values, Type>& output, const vector_t<Values, Type>& above){
+        output.apply([](auto value){return value > 0 ? decltype(value)(1.) : 0.;});
+        output *= above;
+    }
+};
+
 struct hyperbolic_tangent {
-    static double eval(double input){
-        return tanh(input);
+    template<size_t Values, typename Type>
+    static void eval(vector_t<Values, Type>& input){
+        input.apply(std::tanh);
     }
 
-    static double derivative(double input){
-        return 1 - input * input;
+    template<size_t Values, typename Type>
+    static void derivative(vector_t<Values, Type>& output, const vector_t<Values, Type>& above){
+        output.apply([](auto value){return 1 - value * value;});
+        output *= above;
     }
 };
 
-template<size_t neuron_count_in_previous_layer>
-struct neuron {
-    neuron(){
-        weights.fill(0);
-        deltas.fill(0);
+struct softmax {
+    template<size_t Values, typename Type>
+    static void eval(vector_t<Values, Type>& input){
+        auto maximum = input.max();
+        input -= maximum;
+        input.apply([](auto value){return std::exp(value);});
+        auto sum = input.sum();
+        input /= sum;
     }
-    std::array<double, neuron_count_in_previous_layer> weights{};
-    std::array<double, neuron_count_in_previous_layer> deltas{};
-    std::array<double, neuron_count_in_previous_layer> current_deltas{};
-    double output = 0.;
-    double bias = 0.;
-    double bias_current_delta = 0.;
-    double biasdelta = 0.;
-    double gradient = 0.;
-    bool enabled = true;
+
+    template<size_t Values, typename Type>
+    static void derivative(vector_t<Values, Type>& output, const vector_t<Values, Type>& above){
+        auto delta = output;
+        delta *= above;
+        auto sum = delta.sum();
+        output *= sum;
+        delta -= output;
+        output = delta;
+
+    }
 };
+
+//struct soft_max {
+//    static double eval(vector input){
+//        maximum = max_vector(input);
+//        exps = exp(max_vector - maximum);
+//
+//        return exps / exps.sum();
+//    }
+//};
+
+//template<size_t neuron_count_in_previous_layer>
+//struct neuron {
+//    neuron(){
+//        weights.fill(0);
+//        deltas.fill(0);
+//    }
+//    std::array<double, neuron_count_in_previous_layer> weights{};
+//    std::array<double, neuron_count_in_previous_layer> deltas{};
+//    std::array<double, neuron_count_in_previous_layer> current_deltas{};
+//    double output = 0.;
+//    double bias = 0.;
+//    double bias_current_delta = 0.;
+//    double biasdelta = 0.;
+//    double gradient = 0.;
+//    bool enabled = true;
+//};
 
 template<size_t neuron_count_, size_t neuron_count_in_previous_layer>
 struct layer {
     static constexpr size_t neuron_count = neuron_count_;
-    std::array<neuron<neuron_count_in_previous_layer>, neuron_count> neurons;
+    vector_t<neuron_count, double> outputs;
+    vector_t<neuron_count, double> biases;
+    vector_t<neuron_count, double> loss_biases;
+    vector_t<neuron_count, double> biases_deltas;
+    vector_t<neuron_count, double> gradients;
+    matrix_t<neuron_count_in_previous_layer, neuron_count, double> weights;
+    matrix_t<neuron_count_in_previous_layer, neuron_count, double> loss;
+    matrix_t<neuron_count_in_previous_layer, neuron_count, double> weights_deltas;
+//    std::array<neuron<neuron_count_in_previous_layer>, neuron_count> weights;
 
-    template<size_t neuron_number>
-    auto& get_neuron(){
-        static_assert(neuron_number < neuron_count);
-        return neurons[neuron_number];
-    }
+//    std::array<double, neuron_count> outputs{};
+//    std::array<double, neuron_count> biases{};
+//    std::array<double, neuron_count> gradients{};
+//    std::array<double, neuron_count> bias_current_deltas{};
+//    std::array<double, neuron_count> biasdeltas{};
 
-    template<size_t neuron_number>
-    const auto& get_neuron() const{
-        static_assert(neuron_number < neuron_count);
-        return neurons[neuron_number];
-    }
-
-    auto& get_neuron(size_t neuron_number){
-        return neurons[neuron_number];
-    }
-    const auto& get_neuron(size_t neuron_number) const{
-        return neurons[neuron_number];
-    }
+//    template<size_t neuron_number>
+//    auto& get_neuron(){
+//        static_assert(neuron_number < neuron_count);
+//        return neurons[neuron_number];
+//    }
+//
+//    template<size_t neuron_number>
+//    const auto& get_neuron() const{
+//        static_assert(neuron_number < neuron_count);
+//        return neurons[neuron_number];
+//    }
+//
+//    auto& get_neuron(size_t neuron_number){
+//        return neurons[neuron_number];
+//    }
+//    const auto& get_neuron(size_t neuron_number) const{
+//        return neurons[neuron_number];
+//    }
 };
 
 template<typename ActivationFunction, size_t... args>
 class net {
 public:
-    template<size_t input_number>
-    void set_input(double value){
-        auto& layer = get_layer<0>();
-        auto& neuron = layer.template get_neuron<input_number>();
-        neuron.output = value;
-    }
-
     void set_input(size_t input_number, double value){
         auto& layer = get_layer<0>();
-        auto& neuron = layer.get_neuron(input_number);
-        neuron.output = value;
-    }
-
-    template<size_t output_number>
-    double get_output() const {
-        const auto& layer = get_layer<layer_count - 1>();
-        const auto& neuron = layer.template get_neuron<output_number>();
-
-        return neuron.output;
+        layer.outputs[input_number] = value;
     }
 
     double get_output(size_t output_number) const {
         const auto& layer = get_layer<layer_count - 1>();
-        const auto& neuron = layer.get_neuron(output_number);
-
-        return neuron.output;
-    }
-
-    template<size_t output_number>
-    void set_target_output(double value){
-        static_assert(output_number < output_count);
-        target_values[output_number] = value;
+        return layer.outputs[output_number];
     }
 
     void set_target_output(size_t output_number, double value){
         target_values[output_number] = value;
     }
 
-    template<size_t layer_number, size_t neuron_number, size_t input_number>
-    void set_weight(double weight){
+    template<size_t layer_number>
+    void set_weight(size_t neuron_number, size_t connection_number, double new_weight){
         auto& layer = get_layer<layer_number>();
-        auto& neuron = layer.template get_neuron<neuron_number>();
-        neuron.weights[input_number] = weight;
-    };
+        layer.weights.at(connection_number, neuron_number) = new_weight;
+    }
 
-    template<size_t layer_number, size_t neuron_number, size_t input_number>
-    double get_weight(){
+    template<size_t layer_number>
+    void set_bias(size_t neuron_number, double new_bias){
         auto& layer = get_layer<layer_number>();
-        auto& neuron = layer.template get_neuron<neuron_number>();
-        return neuron.weights[input_number];
-    };
+        layer.biases[neuron_number] = new_bias;
+    }
 
-    template<size_t layer_number, size_t neuron_number>
-    void set_bias(double bias){
-        auto& layer = get_layer<layer_number>();
-        auto& neuron = layer.template get_neuron<neuron_number>();
-        neuron.bias = bias;
-    };
 
     void evaluate() {
         evaluate_layers();
@@ -176,7 +207,7 @@ private:
     typename zip<size_t, std::tuple, layer, args...>::template with<typename remove_last_from_size_tuple<args...>::type>::type layers;
 
     static constexpr size_t output_count = size_tuple_element<layer_count - 1, size_tuple<args...>>::value;
-    std::array<double, output_count> target_values{};
+    vector_t<output_count, double> target_values;
 
     double learning_rate = 0;
     double dropout_probability = 0.1;
@@ -192,7 +223,7 @@ private:
     }
 
     template<size_t layer_number>
-    auto& get_layer(){
+    constexpr auto& get_layer(){
         return std::get<layer_number>(layers);
     }
 
@@ -205,137 +236,140 @@ private:
     void evaluate_layers(){
         static_assert(layer_number > 0, "First layer cannot be evaluated!");
 
-        for(size_t neuron = 0; neuron < get_neuron_count_at_layer<layer_number>(); ++neuron){
-            evaluate_neuron<layer_number>(neuron);
+//        std::cout << "evaluatel" << layer_number << std::endl;
+
+        auto& layer = get_layer<layer_number>();
+        auto& prev_layer = get_layer<layer_number - 1>();
+
+        layer.outputs = matrix_multiply(transpose(layer.weights), prev_layer.outputs);
+        layer.outputs += layer.biases;
+        if constexpr (layer_number < layer_count - 1) {
+            ActivationFunction::eval(layer.outputs);
+        } else {
+//            softmax::eval(layer.outputs);
+            ActivationFunction::eval(layer.outputs);
         }
+
+//        layer.outputs.print();
 
         if constexpr(layer_number < layer_count - 1){
             evaluate_layers<layer_number+1>();
         }
     }
 
-    template<size_t layer_number>
-    void evaluate_neuron(size_t neuron_number){
-        auto& neuron = get_layer<layer_number>().neurons[neuron_number];
-        double value = neuron.bias;
-        if(dropout_enabled) {
-            neuron.enabled = dis(rd) < (1 - dropout_probability);
-        } else {
-            neuron.enabled = true;
-        }
-        if(!neuron.enabled){
-            neuron.output = 0;
-            return;
-        }
-
-        for(size_t input_number = 0; input_number < get_neuron_count_at_layer<layer_number-1>(); ++input_number){
-            value += get_layer<layer_number - 1>().neurons[input_number].output * neuron.weights[input_number];
-        }
-
-        if(dropout_enabled){
-            value /= (1 - dropout_probability);
-        }
-
-        neuron.output = ActivationFunction::eval(value);
-    }
-
     void calc_gradient_output_layer(){
-        //TODO: move me to fields
+//        std::cout << "gradiento" << std::endl;
         auto& output_layer = get_layer<layer_count - 1>();
 
-        for(size_t output_neuron = 0; output_neuron < output_count; ++output_neuron){
-            auto& neuron = output_layer.get_neuron(output_neuron);
-            auto error = target_values[output_neuron] - neuron.output;
-            double gradient = error /** std::abs(error)*/ * ActivationFunction::derivative(neuron.output);
-            neuron.gradient = gradient;
-        }
+        // squared error
+        target_values *= -1;
+        target_values += output_layer.outputs;
+        //crossentropy
+
+//        auto denominators = output_layer.outputs;
+//        denominators.apply([](auto value){return std::max(value - value * value, decltype(value)(1e-11));});
+//        target_values *= -1;
+//        target_values += output_layer.outputs;
+//        target_values /= denominators;
+
+        output_layer.gradients = output_layer.outputs;
+//        softmax::derivative(output_layer.gradients, target_values);
+        ActivationFunction::derivative(output_layer.gradients, target_values);
+//        output_layer.gradients.print();
     }
 
     template<size_t layer_number = layer_count - 2>
     void calc_gradient_hidden_layers(){
-        for(size_t neuron_number = 0; neuron_number < get_neuron_count_at_layer<layer_number>(); ++neuron_number){
-            calc_gradient_hidden_layer_neuron<layer_number>(neuron_number);
-        }
+//        std::cout << "gradientl" << layer_number << std::endl;
+        auto& layer = get_layer<layer_number>();
+        auto& next_layer = get_layer<layer_number + 1>();
+
+        auto a = matrix_multiply(next_layer.weights, next_layer.gradients);
+        layer.gradients = layer.outputs;
+        ActivationFunction::derivative(layer.gradients, a);
+
+//        layer.gradients.print();
 
         if constexpr (layer_number > 1){
             calc_gradient_hidden_layers<layer_number - 1>();
         }
     }
 
-    template<size_t layer_number>
-    void calc_gradient_hidden_layer_neuron(size_t neuron_number){
-        auto& layer = get_layer<layer_number>();
-        auto& next_layer = get_layer<layer_number + 1>();
-
-        auto& neuron = layer.get_neuron(neuron_number);
-        if(!neuron.enabled){
-            return;
-        }
-        double gradient = 0;
-        for(size_t output_neuron_number = 0; output_neuron_number < get_neuron_count_at_layer<layer_number + 1>(); ++output_neuron_number){
-            const auto& output_neuron = next_layer.get_neuron(output_neuron_number);
-            gradient += output_neuron.gradient * output_neuron.weights[neuron_number];
-        }
-
-        gradient *= ActivationFunction::derivative(neuron.output);
-
-        neuron.gradient = gradient;
-    }
-
     template<size_t layer_number = 1>
     void update_weights_layers(){
-        for(size_t neuron_number = 0; neuron_number < get_neuron_count_at_layer<layer_number>(); ++neuron_number){
-            update_weights_layer_neuron<layer_number>(neuron_number);
-        }
+//        std::cout << "weightsl" << layer_number << std::endl;
+        auto& layer = get_layer<layer_number>();
+        auto& prev_layer = get_layer<layer_number-1>();
+
+        constexpr auto decay = 0.9;
+        constexpr auto eps = 1e-8;
+
+        auto gradient_matrix = matrix_multiply(prev_layer.outputs, transpose(layer.gradients));
+//        auto gradient_matrix2 = gradient_matrix;
+//        gradient_matrix2.apply([](auto value){return value * value;});
+//        gradient_matrix2 *= 1 - decay;
+//        layer.loss *= decay;
+//        layer.loss += gradient_matrix2;
+//        auto b = layer.loss;
+//        b.apply([](auto value){return std::sqrt(value);});
+//        b += eps;
+//
+//        gradient_matrix /= b;
+//
+//        gradient_matrix *= 0.001;
+////        layer.weights_deltas *= 0.8;
+////        gradient_matrix += layer.weights_deltas;
+//        layer.weights -= gradient_matrix;
+//        layer.weights_deltas = gradient_matrix;
+
+//        layer.weights.print();
+
+
+        transformer3{gradient_matrix, layer.loss, layer.weights}.apply([](auto& gradient, auto& loss, auto& weight){
+            loss = decay * loss + (1 - decay) * gradient * gradient;
+            weight -= 0.00005 * gradient / (std::sqrt(loss) + eps);
+        });
+
+        auto gradient_matrix_bias = layer.biases;
+        gradient_matrix_bias *= layer.gradients;
+
+//        auto gradient_matrix_bias2 = gradient_matrix_bias;
+//        gradient_matrix_bias2.apply([](auto value){return value * value;});
+//        gradient_matrix_bias2 *= 1 - decay;
+//        layer.loss_biases *= decay;
+//        layer.loss_biases += gradient_matrix_bias2;
+//        auto c = layer.loss_biases;
+//        c.apply([](auto value){return std::sqrt(value);});
+//        c += eps;
+//
+//
+//        gradient_matrix_bias /= c;
+//
+//
+//        gradient_matrix_bias *= 0.001;
+////        layer.biases_deltas *= 0.8;
+////        gradient_matrix_bias += layer.biases_deltas;
+//        layer.biases -= gradient_matrix_bias;
+//        layer.biases_deltas = gradient_matrix_bias;
+
+        transformer3{gradient_matrix_bias, layer.loss_biases, layer.biases}.apply([](auto& gradient, auto& loss, auto& weight){
+            loss = decay * loss + (1 - decay) * gradient * gradient;
+            weight -= 0.00005 * gradient / (std::sqrt(loss) + eps);
+        });
+
+//        layer.biases.print();
 
         if constexpr (layer_number < layer_count - 1){
             update_weights_layers<layer_number + 1>();
         }
     }
 
-    template<size_t layer_number>
-    void update_weights_layer_neuron(const size_t neuron_number){
-        auto& layer = get_layer<layer_number>();
-        auto& prev_layer = get_layer<layer_number-1>();
-        auto& neuron = layer.get_neuron(neuron_number);
-
-        if(!neuron.enabled){
-            return;
-        }
-
-        for(size_t input_neuron = 0; input_neuron < get_neuron_count_at_layer<layer_number - 1>(); ++input_neuron){
-            if(!prev_layer.neurons[input_neuron].enabled){
-                continue;
-            }
-            double newdelta = learning_rate * prev_layer.neurons[input_neuron].output * neuron.gradient;
-            neuron.current_deltas[input_neuron] += newdelta;
-
-            if(current_batch == batch_size - 1){
-                neuron.current_deltas[input_neuron] += 0.8 * neuron.deltas[input_neuron];
-                neuron.weights[input_neuron] += neuron.current_deltas[input_neuron]/* - neuron.weights[input_neuron] * 0.0000005*/;
-                neuron.deltas[input_neuron] = neuron.current_deltas[input_neuron];
-                neuron.current_deltas[input_neuron] = 0;
-            }
-        }
-        neuron.bias_current_delta += learning_rate * neuron.bias * neuron.gradient;
-        if(current_batch == batch_size - 1){
-            neuron.bias_current_delta += 0.8 * neuron.biasdelta;
-            neuron.bias += neuron.bias_current_delta/* - neuron.bias * 0.000001*/;
-            neuron.biasdelta = neuron.bias_current_delta;
-            neuron.bias_current_delta = 0;
-        }
-    }
 
     template <size_t layer_number = 1>
     void random_initialize_layers(const std::function<double()>& random_gen){
-        for(size_t neuron_number = 0; neuron_number < get_neuron_count_at_layer<layer_number>(); ++neuron_number){
-            auto& layer = get_layer<layer_number>();
-            auto& neuron = layer.get_neuron(neuron_number);
-
-            std::generate(std::begin(neuron.weights), std::end(neuron.weights), random_gen);
-
-            neuron.bias = random_gen();
-        }
+        auto& layer = get_layer<layer_number>();
+        layer.weights.generate(random_gen);
+        layer.biases.generate(random_gen);
 
         if constexpr (layer_number < layer_count - 1){
             random_initialize_layers<layer_number + 1>(random_gen);
