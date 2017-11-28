@@ -1,3 +1,8 @@
+/**
+ * MNIST dataset classifier
+ * @author: Ondrej Budai <budai@mail.muni.cz
+ */
+
 #include <cassert>
 #include <vector>
 #include <iostream>
@@ -6,6 +11,7 @@
 #include <iomanip>
 #include <fstream>
 #include <optional>
+#include <chrono>
 #include "net.hh"
 
 constexpr size_t input_size = 784;
@@ -61,6 +67,8 @@ private:
             std::cerr << "Reading dataset failed: " << filename_vectors << std::endl;
             throw;
         }
+
+        data.pop_back();
     }
 
     void load_labels(std::string_view filename_labels){
@@ -71,12 +79,12 @@ private:
         while(input_stream >> tmp){
             data[row].target = tmp;
             row++;
-            if(row >= std::size(data)){
+            if(row > std::size(data)){
                 throw;
             }
         }
 
-        if(row != std::size(data) - 1){
+        if(row != std::size(data)){
             throw;
         }
 
@@ -119,43 +127,9 @@ void sanity_check(){
     net.evaluate();
     assert(net.get_output(0) == 0);
 }
-//
-//void benchmark(){
-//    net<step_function, 2, 2, 1> network;
-//
-//    network.set_weight<1, 0, 0>(2);
-//    network.set_weight<1, 0, 1>(2);
-//    network.set_bias<1, 0>(-1);
-//    network.set_weight<1, 1, 0>(-2);
-//    network.set_weight<1, 1, 1>(-2);
-//    network.set_bias<1, 1>(3);
-//    network.set_weight<2, 0, 0>(1);
-//    network.set_weight<2, 0, 1>(1);
-//    network.set_bias<2, 0>(-2);
-//
-//    constexpr int iterations = 10000000;
-//
-//    std::mt19937 random;
-//    std::uniform_int_distribution<int> dist(0, 1);
-//
-//    {
-//        auto begin = std::clock();
-//        for(int i = 0; i < iterations; ++i) {
-//            auto a = random() & 1;
-//            auto b = random() & 1;
-//
-//            network.set_input<0>(a);
-//            network.set_input<1>(b);
-//            network.evaluate();
-//            assert(network.get_output<0>() == (a ^ b));
-//        }
-//        auto end = std::clock();
-//        std::cout << "template: " << (1000. * (end - begin) / CLOCKS_PER_SEC) << std::endl;
-//    }
-//}
-//
+
 void xor_test() {
-    net<hyperbolic_tangent, 2, 4, 1> xor_net;
+    net<relu, 2, 4, 1> xor_net;
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -218,7 +192,29 @@ size_t get_best_output(const Net& net){
     return best_output;
 }
 
+void test_perf(net<hyperbolic_tangent, 784, 800, 10>* network, dataset_t& test_dataset){
+    int ok = 0;
+
+    network->dropout_enabled = false;
+    for(const auto& sample: test_dataset.data){
+        size_t input_number = 0;
+        for(auto input: sample.inputs){
+            network->set_input(input_number++, input);
+        }
+
+        network->evaluate();
+        auto result = get_best_output(*network);
+        if(sample.target == result){
+            ++ok;
+        }
+    }
+
+    std::cerr << "Total: " << std::size(test_dataset.data) << " , ok: " << ok << std::endl;
+}
+
 int main() {
+
+    auto start = std::chrono::system_clock::now();
 
     std::cout << std::setprecision(20);
     matrix_multiplication_test();
@@ -232,7 +228,7 @@ int main() {
     dataset_t dataset{};
     dataset.load("MNIST_DATA/mnist_train_vectors.csv", "MNIST_DATA/mnist_train_labels.csv");
 
-    auto network = std::make_unique<net<hyperbolic_tangent, 784, 800, 400, 10>>();
+    auto network = std::make_unique<net<hyperbolic_tangent, 784, 800, 10>>();
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -244,10 +240,14 @@ int main() {
 
     network->set_learning_rate(0.001);
 
-    size_t last_target = 0;
     int iterations = 0;
-    for(int i = 0; i < 2; ++i) {
+    auto time = clock();
+    while(true) {
         for(const auto& sample: dataset.data) {
+            if(std::chrono::system_clock::now() - start >
+               std::chrono::minutes(30)) {
+                goto end;
+            }
             size_t input_number = 0;
             for(auto input: sample.inputs) {
                 network->set_input(input_number++, input);
@@ -261,37 +261,46 @@ int main() {
             network->set_target_output(static_cast<size_t>(sample.target), 1);
 
             network->calc_gradient();
+
             network->update_weights();
 
             if(iterations % 600 == 0) {
-//            network->set_learning_rate(network->get_learning_rate() * 0.5);
-                std::cerr << "Learning: " << iterations / 600 << "%"
+                std::cerr << "Learning: " << iterations / 600 << "%, took: "
+                          << ((clock() - time) / CLOCKS_PER_SEC) << "s"
                           << std::endl;
+                time = clock();
             }
             ++iterations;
         }
     }
+    end:
 
     auto test_dataset = dataset_t{};
-    int ok = 0;
     test_dataset.load("MNIST_DATA/mnist_test_vectors.csv", "MNIST_DATA/mnist_test_labels.csv");
 
-    network->dropout_enabled = false;
-    for(const auto& sample: test_dataset.data){
+    std::ofstream train_out("trainPredictions");
+    for(const auto& sample: dataset.data) {
         size_t input_number = 0;
         for(auto input: sample.inputs){
-            network->set_input(++input_number, input);
+            network->set_input(input_number++, input);
         }
 
         network->evaluate();
         auto result = get_best_output(*network);
-        if(sample.target == result){
-            ++ok;
-        }
+        train_out << result << std::endl;
     }
 
-    std::cout << "Total: " << std::size(test_dataset.data) << " , ok: " << ok << std::endl;
+    std::ofstream test_out("actualTestPredictions");
+    for(const auto& sample: test_dataset.data){
+        size_t input_number = 0;
+        for(auto input: sample.inputs){
+            network->set_input(input_number++, input);
+        }
 
+        network->evaluate();
+        auto result = get_best_output(*network);
+        test_out << result << std::endl;
+    }
 
     return 0;
 }

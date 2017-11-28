@@ -1,3 +1,8 @@
+/**
+ * MNIST dataset classifier
+ * @author: Ondrej Budai <budai@mail.muni.cz
+ */
+
 #ifndef DIGIT_RECOGNIZER_ARRAY_OPERATIONS_HH
 #define DIGIT_RECOGNIZER_ARRAY_OPERATIONS_HH
 
@@ -32,7 +37,7 @@ public:
         return m_data[row][col];
     }
 
-    matrix_t<height, width, Type>& apply(Type(*func)(Type)) {
+    matrix_t<height, width, Type>& apply(std::function<Type(Type)> func) {
         for(size_t row = 0; row < height; ++row){
             for(size_t col = 0; col < width; ++ col){
                 m_data[row][col] = func(m_data[row][col]);
@@ -140,6 +145,14 @@ public:
             for(size_t col = 0; col < width; ++col){
         for(size_t row = 0; row < height; ++row){
                 std::cout << m_data[row][col] << std::endl;
+            }
+        }
+    }
+
+    void zero() {
+        for(size_t col = 0; col < width; ++col){
+            for(size_t row = 0; row < height; ++row){
+                m_data[row][col] = 0;
             }
         }
     }
@@ -275,39 +288,14 @@ void matrix_multiplication_test() {
     assert(c1.at(1, 2) == 220);
 }
 
-template<size_t Height, size_t Width, typename Type>
-struct transformer2 {
-
-    using Matrix = matrix_t<Height, Width, Type>;
-    Matrix& a;
-    Matrix& b;
-    transformer2(Matrix& a_, Matrix& b_) : a{a_}, b{b_}{}
-
-    void apply(void(*func)(Type&, Type&)){
-        for(size_t row = 0; row < Height; ++row){
-            for(size_t col = 0; col < Width; ++col){
-                func(a.at(row, col), b.at(row, col));
-            }
+template<typename Function, size_t Width, size_t Height, typename Type, template<size_t, size_t, typename>typename... Matrices>
+void transform_many(Function func, Matrices<Width, Height, Type>... matrices){
+    for(size_t row = 0; row < Height; ++row){
+        for(size_t col = 0; col < Width; ++col){
+            func(matrices.at(row,col)...);
         }
     }
 };
 
-template<size_t Height, size_t Width, typename Type>
-struct transformer3 {
-
-    using Matrix = matrix_t<Height, Width, Type>;
-    Matrix& a;
-    Matrix& b;
-    Matrix& c;
-    transformer3(Matrix& a_, Matrix& b_, Matrix& c_) : a{a_}, b{b_}, c{c_}{}
-
-    void apply(void(*func)(Type&, Type&, Type&)){
-        for(size_t row = 0; row < Height; ++row){
-            for(size_t col = 0; col < Width; ++col){
-                func(a.at(row, col), b.at(row, col), c.at(row, col));
-            }
-        }
-    }
-};
 
 #endif //DIGIT_RECOGNIZER_ARRAY_OPERATIONS_HH

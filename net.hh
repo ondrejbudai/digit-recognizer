@@ -1,3 +1,8 @@
+/**
+ * MNIST dataset classifier
+ * @author: Ondrej Budai <budai@mail.muni.cz
+ */
+
 #ifndef DIGIT_RECOGNIZER_NET_HH
 #define DIGIT_RECOGNIZER_NET_HH
 
@@ -32,22 +37,24 @@ struct relu {
     }
 
     template<size_t Values, typename Type>
-    static void derivative(vector_t<Values, Type>& output, const vector_t<Values, Type>& above){
-        output.apply([](auto value){return value > 0 ? decltype(value)(1.) : 0.;});
-        output *= above;
+    static void derivative(vector_t<Values, Type>& output, const vector_t<Values, Type>& input, const vector_t<Values, Type>& above){
+        transform_many([](auto& output, auto& input, auto& above){
+            output = above * (input > 0 ? 1. : 0.);
+        }, output, input, above);
     }
 };
 
 struct hyperbolic_tangent {
     template<size_t Values, typename Type>
     static void eval(vector_t<Values, Type>& input){
-        input.apply(std::tanh);
+        input.apply(static_cast<Type(*)(Type)>(std::tanh));
     }
 
     template<size_t Values, typename Type>
-    static void derivative(vector_t<Values, Type>& output, const vector_t<Values, Type>& above){
-        output.apply([](auto value){return 1 - value * value;});
-        output *= above;
+    static void derivative(vector_t<Values, Type>& output, vector_t<Values, Type>& input, vector_t<Values, Type>& above){
+        transform_many([](auto& output, auto& input, auto& above){
+            output = (1 - input * input) * above;
+        }, output, input, above);
     }
 };
 
@@ -55,49 +62,29 @@ struct softmax {
     template<size_t Values, typename Type>
     static void eval(vector_t<Values, Type>& input){
         auto maximum = input.max();
-        input -= maximum;
-        input.apply([](auto value){return std::exp(value);});
-        auto sum = input.sum();
+
+        Type sum = 0;
+
+        input.apply([maximum, &sum](auto value) {
+            auto result = std::exp(value - maximum);
+            sum += result;
+            return result;
+        });
+
         input /= sum;
     }
 
     template<size_t Values, typename Type>
-    static void derivative(vector_t<Values, Type>& output, const vector_t<Values, Type>& above){
-        auto delta = output;
+    static void derivative(vector_t<Values, Type>& output, vector_t<Values, Type>& input, vector_t<Values, Type>& above){
+        // gradient, prediction, error
+        auto delta = input;
         delta *= above;
         auto sum = delta.sum();
-        output *= sum;
-        delta -= output;
-        output = delta;
-
+        transform_many([sum](auto& output, auto& input, auto& delta){
+            output = delta - input * sum;
+        }, output, input, delta);
     }
 };
-
-//struct soft_max {
-//    static double eval(vector input){
-//        maximum = max_vector(input);
-//        exps = exp(max_vector - maximum);
-//
-//        return exps / exps.sum();
-//    }
-//};
-
-//template<size_t neuron_count_in_previous_layer>
-//struct neuron {
-//    neuron(){
-//        weights.fill(0);
-//        deltas.fill(0);
-//    }
-//    std::array<double, neuron_count_in_previous_layer> weights{};
-//    std::array<double, neuron_count_in_previous_layer> deltas{};
-//    std::array<double, neuron_count_in_previous_layer> current_deltas{};
-//    double output = 0.;
-//    double bias = 0.;
-//    double bias_current_delta = 0.;
-//    double biasdelta = 0.;
-//    double gradient = 0.;
-//    bool enabled = true;
-//};
 
 template<size_t neuron_count_, size_t neuron_count_in_previous_layer>
 struct layer {
@@ -105,37 +92,15 @@ struct layer {
     vector_t<neuron_count, double> outputs;
     vector_t<neuron_count, double> biases;
     vector_t<neuron_count, double> loss_biases;
+    vector_t<neuron_count, double> loss_biases_m;
+    vector_t<neuron_count, double> loss_biases_v;
     vector_t<neuron_count, double> biases_deltas;
     vector_t<neuron_count, double> gradients;
     matrix_t<neuron_count_in_previous_layer, neuron_count, double> weights;
     matrix_t<neuron_count_in_previous_layer, neuron_count, double> loss;
+    matrix_t<neuron_count_in_previous_layer, neuron_count, double> loss_m;
+    matrix_t<neuron_count_in_previous_layer, neuron_count, double> loss_v;
     matrix_t<neuron_count_in_previous_layer, neuron_count, double> weights_deltas;
-//    std::array<neuron<neuron_count_in_previous_layer>, neuron_count> weights;
-
-//    std::array<double, neuron_count> outputs{};
-//    std::array<double, neuron_count> biases{};
-//    std::array<double, neuron_count> gradients{};
-//    std::array<double, neuron_count> bias_current_deltas{};
-//    std::array<double, neuron_count> biasdeltas{};
-
-//    template<size_t neuron_number>
-//    auto& get_neuron(){
-//        static_assert(neuron_number < neuron_count);
-//        return neurons[neuron_number];
-//    }
-//
-//    template<size_t neuron_number>
-//    const auto& get_neuron() const{
-//        static_assert(neuron_number < neuron_count);
-//        return neurons[neuron_number];
-//    }
-//
-//    auto& get_neuron(size_t neuron_number){
-//        return neurons[neuron_number];
-//    }
-//    const auto& get_neuron(size_t neuron_number) const{
-//        return neurons[neuron_number];
-//    }
 };
 
 template<typename ActivationFunction, size_t... args>
@@ -179,7 +144,9 @@ public:
 
     void update_weights() {
         update_weights_layers();
-        current_batch = (current_batch + 1) % batch_size;
+
+        decay1_t *= decay1;
+        decay2_t *= decay2;
     }
 
     void random_initialize(const std::function<double()>& random_gen){
@@ -211,11 +178,14 @@ private:
 
     double learning_rate = 0;
     double dropout_probability = 0.1;
+    double t = 1;
+    static constexpr auto decay1 = 0.9;
+    static constexpr auto decay2 = 0.999;
+    double decay1_t = decay1;
+    double decay2_t = decay2;
 
     std::mt19937 rd{std::random_device{}()};
     std::uniform_real_distribution<double> dis{0, 1};
-    size_t batch_size = 1;
-    size_t current_batch = 0;
 
     template<size_t layer_number>
     static constexpr size_t get_neuron_count_at_layer(){
@@ -246,11 +216,8 @@ private:
         if constexpr (layer_number < layer_count - 1) {
             ActivationFunction::eval(layer.outputs);
         } else {
-//            softmax::eval(layer.outputs);
-            ActivationFunction::eval(layer.outputs);
+            softmax::eval(layer.outputs);
         }
-
-//        layer.outputs.print();
 
         if constexpr(layer_number < layer_count - 1){
             evaluate_layers<layer_number+1>();
@@ -258,37 +225,25 @@ private:
     }
 
     void calc_gradient_output_layer(){
-//        std::cout << "gradiento" << std::endl;
         auto& output_layer = get_layer<layer_count - 1>();
 
-        // squared error
-        target_values *= -1;
-        target_values += output_layer.outputs;
-        //crossentropy
+        transform_many([](auto& target, auto& prediction){
+            auto denominator = std::max(prediction - prediction * prediction, 1e-11);
+            target = (prediction - target) / denominator;
+        }, target_values, output_layer.outputs);
 
-//        auto denominators = output_layer.outputs;
-//        denominators.apply([](auto value){return std::max(value - value * value, decltype(value)(1e-11));});
-//        target_values *= -1;
-//        target_values += output_layer.outputs;
-//        target_values /= denominators;
-
-        output_layer.gradients = output_layer.outputs;
-//        softmax::derivative(output_layer.gradients, target_values);
-        ActivationFunction::derivative(output_layer.gradients, target_values);
-//        output_layer.gradients.print();
+        softmax::derivative(output_layer.gradients, output_layer.outputs, target_values);
     }
 
     template<size_t layer_number = layer_count - 2>
     void calc_gradient_hidden_layers(){
-//        std::cout << "gradientl" << layer_number << std::endl;
         auto& layer = get_layer<layer_number>();
         auto& next_layer = get_layer<layer_number + 1>();
 
         auto a = matrix_multiply(next_layer.weights, next_layer.gradients);
-        layer.gradients = layer.outputs;
-        ActivationFunction::derivative(layer.gradients, a);
 
-//        layer.gradients.print();
+        ActivationFunction::derivative(layer.gradients, layer.outputs, a);
+
 
         if constexpr (layer_number > 1){
             calc_gradient_hidden_layers<layer_number - 1>();
@@ -297,67 +252,43 @@ private:
 
     template<size_t layer_number = 1>
     void update_weights_layers(){
-//        std::cout << "weightsl" << layer_number << std::endl;
         auto& layer = get_layer<layer_number>();
         auto& prev_layer = get_layer<layer_number-1>();
 
-        constexpr auto decay = 0.9;
+//        constexpr auto decay = 0.9;
         constexpr auto eps = 1e-8;
 
         auto gradient_matrix = matrix_multiply(prev_layer.outputs, transpose(layer.gradients));
-//        auto gradient_matrix2 = gradient_matrix;
-//        gradient_matrix2.apply([](auto value){return value * value;});
-//        gradient_matrix2 *= 1 - decay;
-//        layer.loss *= decay;
-//        layer.loss += gradient_matrix2;
-//        auto b = layer.loss;
-//        b.apply([](auto value){return std::sqrt(value);});
-//        b += eps;
-//
-//        gradient_matrix /= b;
-//
-//        gradient_matrix *= 0.001;
-////        layer.weights_deltas *= 0.8;
-////        gradient_matrix += layer.weights_deltas;
-//        layer.weights -= gradient_matrix;
-//        layer.weights_deltas = gradient_matrix;
 
-//        layer.weights.print();
+        auto decay1_ta = 1 - decay1_t;
+        auto decay2_ta = 1 - decay2_t;
+
+        auto adam = [decay1_ta, decay2_ta](auto& gradient, auto& loss_m, auto& loss_v, auto&weight){
+            loss_m = loss_m * decay1 + (1 - decay1) * gradient;
+            loss_v = loss_v * decay2 + (1 - decay2) * gradient * gradient;
+
+            auto loss_m_corrected = loss_m / (decay1_ta);
+            auto loss_v_corrected = loss_v / (decay2_ta);
+
+            weight -= 0.0001 * loss_m_corrected / (std::sqrt(loss_v_corrected) + eps);
+
+        };
+
+//        auto rmsprop = [](auto& gradient, auto& loss, auto& weight){
+//            loss = decay * loss + (1 - decay) * gradient * gradient;
+//            weight -= 0.0001 * gradient / (std::sqrt(loss) + eps);
+//        };
 
 
-        transformer3{gradient_matrix, layer.loss, layer.weights}.apply([](auto& gradient, auto& loss, auto& weight){
-            loss = decay * loss + (1 - decay) * gradient * gradient;
-            weight -= 0.00005 * gradient / (std::sqrt(loss) + eps);
-        });
+        transform_many(adam, gradient_matrix, layer.loss_m, layer.loss_v, layer.weights);
+//        transformer3{gradient_matrix, layer.loss, layer.weights}.apply(rmsprop);
 
         auto gradient_matrix_bias = layer.biases;
         gradient_matrix_bias *= layer.gradients;
 
-//        auto gradient_matrix_bias2 = gradient_matrix_bias;
-//        gradient_matrix_bias2.apply([](auto value){return value * value;});
-//        gradient_matrix_bias2 *= 1 - decay;
-//        layer.loss_biases *= decay;
-//        layer.loss_biases += gradient_matrix_bias2;
-//        auto c = layer.loss_biases;
-//        c.apply([](auto value){return std::sqrt(value);});
-//        c += eps;
-//
-//
-//        gradient_matrix_bias /= c;
-//
-//
-//        gradient_matrix_bias *= 0.001;
-////        layer.biases_deltas *= 0.8;
-////        gradient_matrix_bias += layer.biases_deltas;
-//        layer.biases -= gradient_matrix_bias;
-//        layer.biases_deltas = gradient_matrix_bias;
+        transform_many(adam, gradient_matrix_bias, layer.loss_biases_m, layer.loss_biases_v, layer.biases);
+//        transformer3{gradient_matrix_bias, layer.loss_biases, layer.biases}.apply(rmsprop);
 
-        transformer3{gradient_matrix_bias, layer.loss_biases, layer.biases}.apply([](auto& gradient, auto& loss, auto& weight){
-            loss = decay * loss + (1 - decay) * gradient * gradient;
-            weight -= 0.00005 * gradient / (std::sqrt(loss) + eps);
-        });
-
-//        layer.biases.print();
 
         if constexpr (layer_number < layer_count - 1){
             update_weights_layers<layer_number + 1>();

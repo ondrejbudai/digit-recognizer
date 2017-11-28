@@ -1,3 +1,8 @@
+/**
+ * MNIST dataset classifier
+ * @author: Ondrej Budai <budai@mail.muni.cz
+ */
+
 #ifndef DIGIT_RECOGNIZER_META_HELPERS_HH
 #define DIGIT_RECOGNIZER_META_HELPERS_HH
 
